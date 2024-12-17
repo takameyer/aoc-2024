@@ -60,55 +60,68 @@ class Computer:
         self.register_a = register_a
         self.register_b = register_b
         self.register_c = register_c
-        self.insruction_pointer = 0
+        self.instruction_pointer = 0
         self.output = []
         self.program_input = program_input
+        self.instruction_count = len(program_input) // 2
+
+    def reset(self, new_a):
+        self.register_a = new_a
+        self.register_b = 0
+        self.register_c = 0
+        self.instruction_pointer = 0
+        self.output = []
 
     def is_done(self):
-        return self.insruction_pointer >= len(self.program_input)
+        return self.instruction_pointer >= len(self.program_input)
 
-    def tick(self):
-        instruction_code = self.program_input[self.insruction_pointer]
-        operand = self.program_input[self.insruction_pointer + 1]
+    def simulate_until_diverge(self, target_output):
+        while self.instruction_pointer < len(self.program_input):
+            instruction = self.program_input[self.instruction_pointer]
+            operand = self.program_input[self.instruction_pointer + 1]
 
-        instruction = INSTRUCTION_MAP[instruction_code]
+            # Special handling for jump instruction
+            if instruction == 3:  # jnz
+                if self.register_a != 0:
+                    self.instruction_pointer = operand
+                    continue
+                self.instruction_pointer += 2
+                continue
 
-        match instruction:
-            case (
-                "adv"
-            ):  # 0: take register a, and shift it right by the combo operand -> A
+            # Handle output instruction
+            if instruction == 5:  # out
+                output_val = str(self.get_combo_operand(operand) % 8)
+                if (
+                    len(self.output) >= len(target_output)
+                    or output_val != target_output[len(self.output)]
+                ):
+                    return False
+                self.output.append(output_val)
+            # Handle register A modifications
+            elif instruction == 0:  # adv
                 self.register_a = int(
                     self.register_a / (2 ** self.get_combo_operand(operand))
                 )
-            case "bxl":  # 1: take register b, and bitwise xor it with the operand -> B
+            # Handle register B modifications
+            elif instruction == 1:  # bxl
                 self.register_b = self.register_b ^ operand
-            case "bst":  # 2: take the combo operand, and keep the lowest 3 bits
+            elif instruction == 2:  # bst
                 self.register_b = self.get_combo_operand(operand) % 8
-            case (
-                "jnz"
-            ):  # 3: if register a is not 0, set the instruction pointer to the operand
-                if self.register_a != 0:
-                    self.insruction_pointer = operand
-                    return
-            case "bxc":  # 4: take register b, and bitwise xor it with register c -> B
+            elif instruction == 4:  # bxc
                 self.register_b = self.register_b ^ self.register_c
-            case "out":  # 5: take the combo operand, and keep the lowest 3 bits
-                self.output.append(str(self.get_combo_operand(operand) % 8))
-            case (
-                "bdv"
-            ):  # 6: take register a, and shift it right by the combo operand -> B
+            elif instruction == 6:  # bdv
                 self.register_b = int(
                     self.register_a / (2 ** self.get_combo_operand(operand))
                 )
-            case (
-                "cdv"
-            ):  # 7: take register a, and shift it right by the combo operand -> C
+            # Handle register C modifications
+            elif instruction == 7:  # cdv
                 self.register_c = int(
                     self.register_a / (2 ** self.get_combo_operand(operand))
                 )
 
-        self.insruction_pointer += 2
-        return
+            self.instruction_pointer += 2
+
+        return len(self.output) == len(target_output)
 
     def get_combo_operand(self, operand):
         match operand:
@@ -134,7 +147,7 @@ class Computer:
 
     def print_state(self):
         print(
-            f"Register A: {self.register_a}, Register B: {self.register_b}, Register C: {self.register_c}, Instruction Pointer: {self.insruction_pointer}"
+            f"Register A: {self.register_a}, Register B: {self.register_b}, Register C: {self.register_c}, Instruction Pointer: {self.instruction_pointer}"
         )
 
     def run(self):
@@ -142,57 +155,44 @@ class Computer:
             self.tick()
         return
 
-    def find_a(self):
-        a = 0
-        t = 0
-        print("Finding a")
-        goal = list(map(str, self.program_input))
-        print(f"Output should be: {goal}")
-        aprime = 0
-        while True:
-            aprime = (a << 3) + t
-            self.register_a = aprime
-            # print(f"Trying a: {aprime}")
-            self.run()
-            # print(f"Output: {self.output}")
-            if goal == self.output:
-                a = aprime
-                break
-            self.output = []
-            self.insruction_pointer = 0
-            self.register_b = 0
-            self.register_c = 0
-            t += 1
-        return a
+    def find_a_optimized(self):
+        target_output = list(map(str, self.program_input))
+        max_shift = 0
 
-    def get_output_string(self):
-        return ",".join(self.output)
+        for i in range(0, len(self.program_input), 2):
+            instruction = self.program_input[i]
+            operand = self.program_input[i + 1]
+            if instruction in [0, 6, 7]:  # adv, bdv, cdv
+                if operand <= 3:
+                    max_shift = max(max_shift, operand)
+                else:
+                    max_shift = max(max_shift, 7)
+
+        max_required_bits = len(target_output) * 3 + max_shift
+        max_a = 1 << max_required_bits
+        step_size = 1 << 3
+
+        print(f"Max required bits: {max_required_bits}")
+        print(f"Max A: {max_a}")
+
+        for base_a in range(max_a - step_size, -1, -step_size):
+            for fine_a in range(7, -1, -1):
+                a = base_a + fine_a
+                self.reset(a)
+                if self.simulate_until_diverge(target_output):
+                    print(f"Found a: {a}")
+                    print(f"Output: {self.output}")
+                    print(f"Target: {target_output}")
+                    return a
+
+        return None
 
 
 register_a, register_b, register_c, program_input = read_file()
 
 computer = Computer(int(register_a), int(register_b), int(register_c), program_input)
 
-
-for input in program_input:
-    a = 0
-    target_found = False
-    print(f"Trying input: {input}")
-    while not target_found:
-        computer = Computer(a, 0, 0, program_input)
-        computer.run()
-        output = computer.get_output_string()
-        print(output)
-        if output == input:
-            target_found = True
-            print(f"Found a: {a}")
-        a += 1
-
-
-computer.print_state()
-computer.print_output()
-
-# print(computer.find_a())
+print(computer.find_a_optimized())
 
 # computer.print_state()
 
