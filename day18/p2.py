@@ -1,4 +1,5 @@
 from collections import deque
+import heapq
 from pprint import pprint
 
 INPUT_FILE = "input.txt"
@@ -101,9 +102,6 @@ def find_shortest_path_bfs(grid, start, end):
         (current_x, current_y), path = queue.popleft()
 
         if (current_x, current_y) == end:
-            print("found path")
-            print(path)
-            print(len(path) - 1)
             return path, len(path) - 1
 
         for dx, dy in DIRECTIONS:
@@ -118,6 +116,44 @@ def find_shortest_path_bfs(grid, start, end):
             ):
                 visited.add(next_pos)
                 queue.append((next_pos, path + [next_pos]))
+
+    return None, None
+
+
+def find_shortest_path_astar(grid, start, end):
+    def manhatten_distance(pos1, pos2):
+        return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
+
+    rows, cols = len(grid), len(grid[0])
+
+    queue = [(manhatten_distance(start, end), 0, start, [start])]
+    visited = {start: 0}
+
+    while queue:
+        f_score, g_score, current, path = heapq.heappop(queue)
+
+        if current == end:
+            return path, g_score
+
+        if current in visited and visited[current] < g_score:
+            continue
+
+        for dx, dy in DIRECTIONS:
+            next_x, next_y = current[0] + dx, current[1] + dy
+            next_pos = (next_x, next_y)
+            new_g_score = g_score + 1
+
+            if (
+                0 <= next_x < rows
+                and 0 <= next_y < cols
+                and grid[next_y][next_x] != "#"
+                and (next_pos not in visited or new_g_score < visited[next_pos])
+            ):
+                visited[next_pos] = new_g_score
+                f_score = new_g_score + manhatten_distance(next_pos, end)
+                heapq.heappush(
+                    queue, (f_score, new_g_score, next_pos, path + [next_pos])
+                )
 
     return None, None
 
